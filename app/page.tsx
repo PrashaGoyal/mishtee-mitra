@@ -4,12 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * mishTee Delivery Mitra - Final Milestone Edition
- * [1] Authentication & Store Mapping
- * [2] Distance & Traffic Logic (Haversine)
- * [3] Real-time Write-Back (Out for Delivery -> Delivered)
- * [4] Proof of Delivery (HTML5 Canvas Signature)
- * [5] Job Closure & Success States
+ * mishTee Delivery Mitra - Final Milestone Edition (v2.1)
+ * Fix: TypeScript Array Access for Nested Supabase Joins
  */
 
 // --- Supabase Config ---
@@ -22,31 +18,28 @@ export default function DeliveryMitraApp() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [agent, setAgent] = useState(null);
-  const [task, setTask] = useState(null);
-  const [distance, setDistance] = useState(null);
+  const [agent, setAgent] = useState<any>(null);
+  const [task, setTask] = useState<any>(null);
+  const [distance, setDistance] = useState<string | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [showPoD, setShowPoD] = useState(false);
   const [jobSuccess, setJobSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  // --- Signature Canvas Ref ---
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
-  // --- Theme ---
   const theme = {
     orange: '#FF6B00',
     green: '#28A745',
     blue: '#007AFF',
     white: '#FFFFFF',
     bg: '#F2F2F7',
-    gray: '#8E8E93',
-    card: '#FFFFFF'
+    gray: '#8E8E93'
   };
 
   // --- Logic: Haversine Distance ---
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     if (!lat1 || !lon1 || !lat2 || !lon2) return null;
     const R = 6371; 
     const dLat = (lat2 - lat1) * (Math.PI / 180);
@@ -57,7 +50,6 @@ export default function DeliveryMitraApp() {
     return (R * c).toFixed(2);
   };
 
-  // --- Logic: Authentication ---
   const handleLogin = async () => {
     if (!phoneNumber.match(/^[9][0-9]{9}$/)) {
       setError('Invalid Mitra number. Must start with 9.');
@@ -82,8 +74,7 @@ export default function DeliveryMitraApp() {
     finally { setLoading(false); }
   };
 
-  // --- Logic: Fetch Task (Join: Orders + Customers + Traffic) ---
-  const fetchLatestTask = async (agentData) => {
+  const fetchLatestTask = async (agentData: any) => {
     setLoading(true);
     const { data: taskData, error: taskError } = await supabase
       .from('orders')
@@ -99,9 +90,23 @@ export default function DeliveryMitraApp() {
       .single();
 
     if (!taskError && taskData) {
-      setTask(taskData);
+      // FIX: Access the first element of the customers array
+      const customer = Array.isArray(taskData.customers) ? taskData.customers[0] : taskData.customers;
+      
+      const formattedTask = {
+        ...taskData,
+        customer: customer // Attach a flat customer object
+      };
+
+      setTask(formattedTask);
       setIsNavigating(taskData.status === 'Out for Delivery');
-      const d = calculateDistance(agentData.stores.lat, agentData.stores.lon, taskData.customers.lat, taskData.customers.lon);
+      
+      const d = calculateDistance(
+        agentData.stores.lat, 
+        agentData.stores.lon, 
+        customer.lat, 
+        customer.lon
+      );
       setDistance(d);
     } else {
       setTask(null);
@@ -110,7 +115,6 @@ export default function DeliveryMitraApp() {
     setJobSuccess(false);
   };
 
-  // --- Logic: Write-Back (Out for Delivery) ---
   const startNavigation = async () => {
     try {
       const { error } = await supabase.from('orders').update({ status: 'Out for Delivery' }).eq('order_id', task.order_id);
@@ -118,30 +122,34 @@ export default function DeliveryMitraApp() {
     } catch (e) { alert('Update failed'); }
   };
 
-  // --- Logic: Signature Pad Functions ---
-  const startDrawing = (e) => {
+  const startDrawing = (e: any) => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    if (ctx) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    }
     setIsDrawing(true);
   };
 
-  const draw = (e) => {
+  const draw = (e: any) => {
     if (!isDrawing) return;
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top;
-    ctx.lineTo(x, y);
-    ctx.stroke();
+    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left;
+    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top;
+    if (ctx) {
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
   };
 
-  // --- Logic: Final Closure ---
   const closeOrder = async () => {
     setLoading(true);
     try {
@@ -155,7 +163,6 @@ export default function DeliveryMitraApp() {
     finally { setLoading(false); }
   };
 
-  // --- UI Components ---
   if (!isLoggedIn) {
     return (
       <div style={styles.shell}>
@@ -195,17 +202,20 @@ export default function DeliveryMitraApp() {
           <>
             <div style={styles.taskCard}>
               <span style={styles.label}>ACTIVE TASK</span>
-              <h3 style={{ margin: '5px 0' }}>{task.customers.full_name}</h3>
-              <p style={{ color: theme.gray, fontSize: '14px' }}>📍 {task.customers.delivery_address}</p>
+              <h3 style={{ margin: '5px 0' }}>{task.customer?.full_name}</h3>
+              <p style={{ color: theme.gray, fontSize: '14px' }}>📍 {task.customer?.delivery_address}</p>
               
               <div style={styles.statsRow}>
                 <div><small>Dist.</small><br/><b>{distance} km</b></div>
                 <div><small>ETD</small><br/><b>{task.traffic_api?.[0]?.etd_minutes || '--'} m</b></div>
               </div>
 
-              
-              <iframe width="100%" height="150" style={{ borderRadius: '12px', border: '1px solid #EEE', marginTop: '10px' }}
-                src={`https://www.openstreetmap.org/export/embed.html?bbox=${task.customers.lon-0.01},${task.customers.lat-0.01},${task.customers.lon+0.01},${task.customers.lat+0.01}&marker=${task.customers.lat},${task.customers.lon}`}></iframe>
+              <iframe 
+                width="100%" 
+                height="150" 
+                style={{ borderRadius: '12px', border: '1px solid #EEE', marginTop: '10px' }}
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=${task.customer?.lon-0.01},${task.customer?.lat-0.01},${task.customer?.lon+0.01},${task.customer?.lat+0.01}&marker=${task.customer?.lat},${task.customer?.lon}`}
+              ></iframe>
 
               {!isNavigating ? (
                 <button onClick={startNavigation} style={{ ...styles.primaryBtn, backgroundColor: theme.orange }}>View Detailed Route</button>
@@ -219,7 +229,18 @@ export default function DeliveryMitraApp() {
                 <div style={styles.modal}>
                   <h3>Proof of Delivery</h3>
                   <p style={{ fontSize: '12px', color: theme.gray }}>Recipient Signature / Initials:</p>
-                  <canvas ref={canvasRef} width="300" height="150" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={() => setIsDrawing(false)} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={() => setIsDrawing(false)} style={styles.canvas} />
+                  <canvas 
+                    ref={canvasRef} 
+                    width="300" 
+                    height="150" 
+                    onMouseDown={startDrawing} 
+                    onMouseMove={draw} 
+                    onMouseUp={() => setIsDrawing(false)} 
+                    onTouchStart={startDrawing} 
+                    onTouchMove={draw} 
+                    onTouchEnd={() => setIsDrawing(false)} 
+                    style={styles.canvas} 
+                  />
                   <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                     <button onClick={() => setShowPoD(false)} style={styles.secondaryBtn}>Cancel</button>
                     <button onClick={closeOrder} style={styles.primaryBtn}>Confirm Closure</button>
@@ -240,7 +261,7 @@ export default function DeliveryMitraApp() {
   );
 }
 
-const styles = {
+const styles: { [key: string]: React.CSSProperties } = {
   shell: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#F2F2F7', padding: '15px' },
   card: { width: '100%', maxWidth: '450px', backgroundColor: '#FFF', borderRadius: '25px', padding: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', boxSizing: 'border-box' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
@@ -253,6 +274,6 @@ const styles = {
   statsRow: { display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid #F9F9F9' },
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' },
   modal: { backgroundColor: '#FFF', padding: '25px', borderRadius: '20px', width: '100%', maxWidth: '350px' },
-  canvas: { border: '2px dashed #DDD', borderRadius: '8px', width: '100%', cursor: 'crosshair', backgroundColor: '#FAFAFA' },
+  canvas: { border: '2px dashed #DDD', borderRadius: '8px', width: '100%', cursor: 'crosshair', backgroundColor: '#FAFAFA', touchAction: 'none' },
   linkBtn: { width: '100%', background: 'none', border: 'none', color: '#999', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline' }
 };
