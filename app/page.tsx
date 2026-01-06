@@ -3,23 +3,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-/**
- * mishTee Delivery Mitra - Final Integrated App
- * Logic: Login -> Task Fetch -> Write-Back (Out for Delivery) -> PoD Closure
- */
-
 // --- 1. Supabase Initialization ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function DeliveryMitraApp() {
-  // --- State ---
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loading, setLoading] = useState(false);
   const [agent, setAgent] = useState<any>(null);
-  const [task, setTask] = useState<any>(null); // Flattened task object
+  const [task, setTask] = useState<any>(null);
   const [distance, setDistance] = useState<string | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [showPoD, setShowPoD] = useState(false);
@@ -32,13 +26,11 @@ export default function DeliveryMitraApp() {
   const theme = {
     orange: '#FF6B00',
     green: '#28A745',
-    blue: '#007AFF',
     white: '#FFFFFF',
     bg: '#F2F2F7',
-    gray: '#8E8E93',
+    gray: '#8E8E93'
   };
 
-  // --- Logic: Haversine Distance ---
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     if (!lat1 || !lon1 || !lat2 || !lon2) return null;
     const R = 6371; 
@@ -50,7 +42,6 @@ export default function DeliveryMitraApp() {
     return (R * c).toFixed(2);
   };
 
-  // --- Logic: Authentication ---
   const handleLogin = async () => {
     if (!phoneNumber.match(/^[9][0-9]{9}$/)) {
       setError('Invalid Mitra number. Must start with 9.');
@@ -75,7 +66,6 @@ export default function DeliveryMitraApp() {
     finally { setLoading(false); }
   };
 
-  // --- Logic: Fetch Task (Join & Flatten) ---
   const fetchLatestTask = async (agentData: any) => {
     setLoading(true);
     const { data: taskData, error: taskError } = await supabase
@@ -92,53 +82,32 @@ export default function DeliveryMitraApp() {
       .single();
 
     if (!taskError && taskData) {
-      // FIX: Handle array vs object for customers join
-      const customerData = Array.isArray(taskData.customers) ? taskData.customers[0] : taskData.customers;
-      const trafficData = Array.isArray(taskData.traffic_api) ? taskData.traffic_api[0] : taskData.traffic_api;
+      // Flattening customer data to avoid array access errors
+      const customer = Array.isArray(taskData.customers) ? taskData.customers[0] : taskData.customers;
+      const traffic = Array.isArray(taskData.traffic_api) ? taskData.traffic_api[0] : taskData.traffic_api;
 
-      const formattedTask = {
-        ...taskData,
-        customer: customerData,
-        traffic: trafficData
-      };
-
+      const formattedTask = { ...taskData, customer, traffic };
       setTask(formattedTask);
       setIsNavigating(taskData.status === 'Out for Delivery');
       
-      const d = calculateDistance(
-        agentData.stores.lat, 
-        agentData.stores.lon, 
-        customerData.lat, 
-        customerData.lon
-      );
+      const d = calculateDistance(agentData.stores.lat, agentData.stores.lon, customer.lat, customer.lon);
       setDistance(d);
-    } else {
-      setTask(null);
-    }
+    } else { setTask(null); }
     setLoading(false);
     setJobSuccess(false);
   };
 
-  // --- [FIX] Logic: Status Write-Back (Navigation) ---
   const startNavigation = async () => {
     if (!task) return;
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'Out for Delivery' })
-        .eq('order_id', task.order_id);
-
-      if (error) {
-        alert("Database Error: " + error.message);
-      } else {
-        setIsNavigating(true);
-      }
+      const { error } = await supabase.from('orders').update({ status: 'Out for Delivery' }).eq('order_id', task.order_id);
+      if (error) { alert("Error: " + error.message); } 
+      else { setIsNavigating(true); }
     } catch (e) { alert('Update failed'); }
     finally { setLoading(false); }
   };
 
-  // --- Signature Logic ---
   const startDrawing = (e: any) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -174,13 +143,12 @@ export default function DeliveryMitraApp() {
     finally { setLoading(false); }
   };
 
-  // --- Render ---
   if (!isLoggedIn) {
     return (
       <div style={styles.shell}>
         <div style={styles.card}>
           <img src="https://raw.githubusercontent.com/sudhir-voleti/mishtee-magic/main/mishTee_logo.png" style={styles.logo} alt="logo" />
-          <h2 style={{ color: theme.orange }}>Mitra Dashboard</h2>
+          <h2 style={{ color: theme.orange }}>Mitra Login</h2>
           <input type="tel" placeholder="Phone (9...)" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} style={styles.input} />
           <button onClick={handleLogin} style={styles.primaryBtn}>{loading ? 'Checking...' : 'Login'}</button>
           {error && <p style={{ color: 'red' }}>{error}</p>}
@@ -194,8 +162,8 @@ export default function DeliveryMitraApp() {
       <div style={styles.shell}>
         <div style={{ ...styles.card, textAlign: 'center' }}>
           <h1 style={{ fontSize: '40px' }}>✅</h1>
-          <h2>Job Well Done!</h2>
-          <button onClick={() => fetchLatestTask(agent)} style={styles.primaryBtn}>Find Next Delivery</button>
+          <h2>Delivered!</h2>
+          <button onClick={() => fetchLatestTask(agent)} style={styles.primaryBtn}>Next Task</button>
         </div>
       </div>
     );
@@ -214,35 +182,29 @@ export default function DeliveryMitraApp() {
             <span style={styles.label}>CUSTOMER</span>
             <h3 style={{ margin: '5px 0' }}>{task.customer?.full_name}</h3>
             <p style={{ color: theme.gray }}>📍 {task.customer?.delivery_address}</p>
-            
             <div style={styles.statsRow}>
               <div><small>Dist.</small><br/><b>{distance} km</b></div>
               <div><small>ETD</small><br/><b>{task.traffic?.etd_minutes || '--'} m</b></div>
             </div>
 
-            <iframe 
-              width="100%" height="150" style={{ borderRadius: '12px', border: 'none', marginTop: '10px' }}
+            <iframe width="100%" height="150" style={{ borderRadius: '12px', border: 'none', marginTop: '10px' }}
               src={`https://www.openstreetmap.org/export/embed.html?bbox=${task.customer?.lon-0.01},${task.customer?.lat-0.01},${task.customer?.lon+0.01},${task.customer?.lat+0.01}&marker=${task.customer?.lat},${task.customer?.lon}`}
             ></iframe>
 
             {!isNavigating ? (
-              <button onClick={startNavigation} style={{ ...styles.primaryBtn, backgroundColor: theme.orange }}>
-                {loading ? 'Updating...' : 'View Detailed Route'}
-              </button>
+              <button onClick={startNavigation} style={{ ...styles.primaryBtn, backgroundColor: theme.orange }}>View Route</button>
             ) : (
-              <button onClick={() => setShowPoD(true)} style={{ ...styles.primaryBtn, backgroundColor: theme.green }}>
-                Mark as Delivered
-              </button>
+              <button onClick={() => setShowPoD(true)} style={{ ...styles.primaryBtn, backgroundColor: theme.green }}>Mark Delivered</button>
             )}
 
             {showPoD && (
               <div style={styles.overlay}>
                 <div style={styles.modal}>
-                  <h3>Sign for Closure</h3>
+                  <h3>Sign for Proof</h3>
                   <canvas ref={canvasRef} width="300" height="150" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={() => setIsDrawing(false)} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={() => setIsDrawing(false)} style={styles.canvas} />
                   <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                     <button onClick={() => setShowPoD(false)} style={styles.secondaryBtn}>Cancel</button>
-                    <button onClick={closeOrder} style={styles.primaryBtn}>Finish</button>
+                    <button onClick={closeOrder} style={styles.primaryBtn}>Confirm</button>
                   </div>
                 </div>
               </div>
@@ -260,7 +222,6 @@ export default function DeliveryMitraApp() {
   );
 }
 
-// --- Styles ---
 const styles: { [key: string]: React.CSSProperties } = {
   shell: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#F2F2F7', padding: '15px', fontFamily: 'sans-serif' },
   card: { width: '100%', maxWidth: '400px', backgroundColor: '#FFF', borderRadius: '25px', padding: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', boxSizing: 'border-box' },
