@@ -4,115 +4,150 @@ import React, { useState, useEffect } from 'react';
 
 /**
 
-mishTee Delivery Mitra - Mobile Dashboard
+mishTee Delivery Mitra - Mobile Dashboard (Next.js App Router)
 
-Developed by Senior Frontend Engineer
+DESIGN SPECIFICATIONS:
 
-Architecture:
+Mobile-first (Max-width: 500px, Centered)
 
-Single-file Next.js Client Component.
+100% Inline Styles (No external CSS/Tailwind)
 
-100% Inline Styles for logic-bound styling and design compliance.
+Brand: mishTee Magic */
 
-Responsive Mobile-first container with safe area centering. */
+export default function DeliveryMitraDashboard() { const [pulseOpacity, setPulseOpacity] = useState(1);
 
-export default function DeliveryMitraDashboard() { // State for the pulsing green dot (Senior Engineer Note: Using state-based // animation to adhere strictly to the "Inline Styles only" constraint). const [pulseOpacity, setPulseOpacity] = useState(1);
+// Logic for the pulsing status dot (Agent Online) useEffect(() => { const interval = setInterval(() => { setPulseOpacity((prev) => (prev === 1 ? 0.3 : 1)); }, 800); return () => clearInterval(interval); }, []);
 
-useEffect(() => { const interval = setInterval(() => { setPulseOpacity((prev) => (prev === 1 ? 0.3 : 1)); }, 1000); return () => clearInterval(interval); }, []);
+// UI Theme Constants const theme = { orange: '#FF6B00', green: '#28A745', white: '#FFFFFF', background: '#F5F5F7', text: '#1D1D1F', shadow: '0 8px 30px rgba(0, 0, 0, 0.12)', };
 
-// Design Tokens const colors = { brandOrange: '#FF6B00', successGreen: '#28a745', background: '#F8F9FA', white: '#FFFFFF', textDark: '#333333', shadow: '0 10px 25px rgba(0,0,0,0.08)', };
+return ( <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: theme.background, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif', margin: 0, padding: '20px', }} > <div style={{ width: '100%', maxWidth: '500px', backgroundColor: theme.white, borderRadius: '28px', padding: '40px 24px', boxShadow: theme.shadow, display: 'flex', flexDirection: 'column', alignItems: 'center', boxSizing: 'border-box', }} > {/* Logo Section */} <img src="https://raw.githubusercontent.com/sudhir-voleti/mishtee-magic/main/mishTee_logo.png" alt="mishTee Logo" style={{ width: '80px', marginBottom: '16px' }} />
 
-return ( <main style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: colors.background, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', padding: '0 15px', }} > {/* Mobile-first Layout Container /} <div style={{ width: '100%', maxWidth: '500px', backgroundColor: colors.white, borderRadius: '24px', padding: '40px 20px', boxShadow: colors.shadow, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', }} > {/ Brand Identity Section */} <img src="https://raw.githubusercontent.com/sudhir-voleti/mishtee-magic/main/mishTee_logo.png" alt="mishTee Logo" style={{ width: '80px', marginBottom: '16px' }} />
-
+    {/* Brand Title */}
     <h1
       style={{
         fontSize: '24px',
         fontWeight: '800',
-        color: colors.brandOrange,
-        margin: '0 0 12px 0',
-        letterSpacing: '-0.5px',
+        color: theme.orange,
+        margin: '0 0 16px 0',
+        textAlign: 'center',
       }}
     >
       mishTee Delivery Mitra
     </h1>
 
-    {/* Real-time Status Indicator */}
+    {/* Status Indicator */}
     <div
       style={{
         display: 'flex',
         alignItems: 'center',
         gap: '8px',
-        marginBottom: '40px',
-        padding: '6px 16px',
-        backgroundColor: '#E9F7EF',
-        borderRadius: '20px',
+        backgroundColor: '#F0FFF4',
+        padding: '8px 20px',
+        borderRadius: '100px',
+        border: '1px solid #C6F6D5',
+        marginBottom: '32px',
       }}
     >
-      <span
+      <div
         style={{
           width: '10px',
           height: '10px',
-          backgroundColor: colors.successGreen,
+          backgroundColor: theme.green,
           borderRadius: '50%',
           opacity: pulseOpacity,
-          transition: 'opacity 0.8s ease-in-out',
+          transition: 'opacity 0.4s ease-in-out',
         }}
       />
       <span
         style={{
           fontSize: '14px',
           fontWeight: '600',
-          color: colors.successGreen,
+          color: theme.green,
         }}
       >
         Agent Online
       </span>
     </div>
 
-    {/* Active Task Card */}
+    {/* Task Card */}
     
     <div
       style={{
         width: '100%',
+        backgroundColor: theme.white,
+        borderRadius: '20px',
         padding: '24px',
-        borderRadius: '16px',
-        backgroundColor: colors.white,
-        border: '1px solid #EEEEEE',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+        border: '1px solid #E5E5E7',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.04)',
         marginBottom: '32px',
         textAlign: 'left',
       }}
     >
-      <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#888888', textTransform: 'uppercase', fontWeight: 'bold' }}>
-        Current Task
+      <p
+        style={{
+          margin: '0 0 8px 0',
+          fontSize: '11px',
+          color: '#86868B',
+          fontWeight: '700',
+          textTransform: 'uppercase',
+          letterSpacing: '1px',
+        }}
+      >
+        Assigned Task
       </p>
-      <h2 style={{ margin: 0, fontSize: '18px', color: colors.textDark, fontWeight: '700' }}>
+      <h2
+        style={{
+          margin: '0',
+          fontSize: '20px',
+          color: theme.text,
+          fontWeight: '700',
+        }}
+      >
         Deliver to: Arjun Mehta
       </h2>
-      <p style={{ margin: '8px 0 0 0', fontSize: '14px', color: '#666666' }}>
+      <p
+        style={{
+          margin: '12px 0 0 0',
+          fontSize: '15px',
+          color: '#424245',
+          lineHeight: '1.5',
+        }}
+      >
         📍 42, Green Valley Apartments, Mumbai
       </p>
     </div>
 
-    {/* Primary Action */}
+    {/* Action Button */}
     <button
       style={{
         width: '100%',
+        backgroundColor: theme.orange,
+        color: theme.white,
         padding: '18px',
-        backgroundColor: colors.brandOrange,
-        color: colors.white,
+        borderRadius: '16px',
         border: 'none',
-        borderRadius: '12px',
-        fontSize: '16px',
+        fontSize: '17px',
         fontWeight: '700',
         cursor: 'pointer',
-        transition: 'transform 0.2s active',
-        boxShadow: '0 4px 15px rgba(255, 107, 0, 0.3)',
+        boxShadow: '0 10px 20px rgba(255, 107, 0, 0.25)',
+        transition: 'transform 0.1s ease',
       }}
-      onClick={() => alert('Launching Navigation...')}
+      onClick={() => alert('Launching Google Maps...')}
     >
       Start Navigation
     </button>
+
+    {/* Footer info */}
+    <p
+      style={{
+        marginTop: '24px',
+        fontSize: '13px',
+        color: '#86868B',
+      }}
+    >
+      Powered by mishTee Logistics
+    </p>
   </div>
-</main>
+</div>
+
 ); }
