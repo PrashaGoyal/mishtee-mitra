@@ -1,178 +1,258 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
 /**
- * mishTee Delivery Mitra - Mobile Dashboard (Next.js App Router)
- * FIX: Resolved 'theme' variable scope issue.
+ * mishTee Delivery Mitra - Final Milestone Edition
+ * [1] Authentication & Store Mapping
+ * [2] Distance & Traffic Logic (Haversine)
+ * [3] Real-time Write-Back (Out for Delivery -> Delivered)
+ * [4] Proof of Delivery (HTML5 Canvas Signature)
+ * [5] Job Closure & Success States
  */
 
-export default function DeliveryMitraDashboard() {
-  const [pulseOpacity, setPulseOpacity] = useState(1);
+// --- Supabase Config ---
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-  // Pulse animation logic for the 'Agent Online' status
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPulseOpacity((prev) => (prev === 1 ? 0.3 : 1));
-    }, 800);
-    return () => clearInterval(interval);
-  }, []);
+export default function DeliveryMitraApp() {
+  // --- App State ---
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [agent, setAgent] = useState(null);
+  const [task, setTask] = useState(null);
+  const [distance, setDistance] = useState(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [showPoD, setShowPoD] = useState(false);
+  const [jobSuccess, setJobSuccess] = useState(false);
+  const [error, setError] = useState('');
 
-  // UI Theme Constants (Ensure this is not on a comment line)
+  // --- Signature Canvas Ref ---
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+
+  // --- Theme ---
   const theme = {
     orange: '#FF6B00',
     green: '#28A745',
+    blue: '#007AFF',
     white: '#FFFFFF',
-    background: '#F5F5F7',
-    text: '#1D1D1F',
-    shadow: '0 8px 30px rgba(0, 0, 0, 0.12)',
+    bg: '#F2F2F7',
+    gray: '#8E8E93',
+    card: '#FFFFFF'
   };
 
+  // --- Logic: Haversine Distance ---
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+    const R = 6371; 
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return (R * c).toFixed(2);
+  };
+
+  // --- Logic: Authentication ---
+  const handleLogin = async () => {
+    if (!phoneNumber.match(/^[9][0-9]{9}$/)) {
+      setError('Invalid Mitra number. Must start with 9.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: agentData, error: authError } = await supabase
+        .from('agents')
+        .select('*, stores(lat, lon, location_name)')
+        .eq('phone_number', phoneNumber)
+        .single();
+
+      if (authError || !agentData) {
+        setError('Agent not found.');
+      } else {
+        setAgent(agentData);
+        fetchLatestTask(agentData);
+        setIsLoggedIn(true);
+      }
+    } catch (err) { setError('System Error. Try again.'); }
+    finally { setLoading(false); }
+  };
+
+  // --- Logic: Fetch Task (Join: Orders + Customers + Traffic) ---
+  const fetchLatestTask = async (agentData) => {
+    setLoading(true);
+    const { data: taskData, error: taskError } = await supabase
+      .from('orders')
+      .select(`
+        order_id, status,
+        customers ( full_name, delivery_address, lat, lon ),
+        traffic_api ( etd_minutes )
+      `)
+      .eq('agent_id', agentData.agent_id)
+      .neq('status', 'Delivered')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!taskError && taskData) {
+      setTask(taskData);
+      setIsNavigating(taskData.status === 'Out for Delivery');
+      const d = calculateDistance(agentData.stores.lat, agentData.stores.lon, taskData.customers.lat, taskData.customers.lon);
+      setDistance(d);
+    } else {
+      setTask(null);
+    }
+    setLoading(false);
+    setJobSuccess(false);
+  };
+
+  // --- Logic: Write-Back (Out for Delivery) ---
+  const startNavigation = async () => {
+    try {
+      const { error } = await supabase.from('orders').update({ status: 'Out for Delivery' }).eq('order_id', task.order_id);
+      if (!error) setIsNavigating(true);
+    } catch (e) { alert('Update failed'); }
+  };
+
+  // --- Logic: Signature Pad Functions ---
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+    const y = (e.clientY || e.touches[0].clientY) - rect.top;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  // --- Logic: Final Closure ---
+  const closeOrder = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('orders').update({ status: 'Delivered' }).eq('order_id', task.order_id);
+      if (error) throw error;
+      setTask(null);
+      setIsNavigating(false);
+      setShowPoD(false);
+      setJobSuccess(true);
+    } catch (err) { alert('Closure failed.'); }
+    finally { setLoading(false); }
+  };
+
+  // --- UI Components ---
+  if (!isLoggedIn) {
+    return (
+      <div style={styles.shell}>
+        <div style={styles.card}>
+          <img src="https://raw.githubusercontent.com/sudhir-voleti/mishtee-magic/main/mishTee_logo.png" style={styles.logo} alt="logo" />
+          <h2 style={{ color: theme.orange }}>mishTee Mitra Login</h2>
+          <input type="tel" placeholder="Phone Number (9...)" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} style={styles.input} />
+          <button onClick={handleLogin} style={styles.primaryBtn}>{loading ? 'Checking...' : 'Enter Dashboard'}</button>
+          {error && <p style={{ color: 'red', marginTop: '10px' }}>{error}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (jobSuccess) {
+    return (
+      <div style={styles.shell}>
+        <div style={{ ...styles.card, textAlign: 'center' }}>
+          <h1 style={{ fontSize: '50px' }}>🎉</h1>
+          <h2 style={{ color: theme.green }}>Job Well Done, Mitra!</h2>
+          <p style={{ color: theme.gray }}>Order closed successfully with Proof of Delivery.</p>
+          <button onClick={() => fetchLatestTask(agent)} style={styles.primaryBtn}>Fetch Next Assignment</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        backgroundColor: theme.background,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-        margin: 0,
-        padding: '20px',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '500px',
-          backgroundColor: theme.white,
-          borderRadius: '28px',
-          padding: '40px 24px',
-          boxShadow: theme.shadow,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          boxSizing: 'border-box',
-        }}
-      >
-        {/* Logo Section */}
-        <img
-          src="https://raw.githubusercontent.com/sudhir-voleti/mishtee-magic/main/mishTee_logo.png"
-          alt="mishTee Logo"
-          style={{ width: '80px', marginBottom: '16px' }}
-        />
-
-        {/* Brand Title */}
-        <h1
-          style={{
-            fontSize: '24px',
-            fontWeight: '800',
-            color: theme.orange,
-            margin: '0 0 16px 0',
-            textAlign: 'center',
-          }}
-        >
-          mishTee Delivery Mitra
-        </h1>
-
-        {/* Status Indicator */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            backgroundColor: '#F0FFF4',
-            padding: '8px 20px',
-            borderRadius: '100px',
-            border: '1px solid #C6F6D5',
-            marginBottom: '32px',
-          }}
-        >
-          <div
-            style={{
-              width: '10px',
-              height: '10px',
-              backgroundColor: theme.green,
-              borderRadius: '50%',
-              opacity: pulseOpacity,
-              transition: 'opacity 0.4s ease-in-out',
-            }}
-          />
-          <span style={{ fontSize: '14px', fontWeight: '600', color: theme.green }}>
-            Agent Online
-          </span>
+    <div style={styles.shell}>
+      <div style={styles.card}>
+        <div style={styles.header}>
+          <img src="https://raw.githubusercontent.com/sudhir-voleti/mishtee-magic/main/mishTee_logo.png" style={{ width: '40px' }} alt="logo" />
+          <span style={{ color: theme.green, fontWeight: 'bold' }}>● Online</span>
         </div>
 
-        {/* Task Card */}
-        <div
-          style={{
-            width: '100%',
-            backgroundColor: theme.white,
-            borderRadius: '20px',
-            padding: '24px',
-            border: '1px solid #E5E5E7',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.04)',
-            marginBottom: '32px',
-            textAlign: 'left',
-          }}
-        >
-          <p
-            style={{
-              margin: '0 0 8px 0',
-              fontSize: '11px',
-              color: '#86868B',
-              fontWeight: '700',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-            }}
-          >
-            Assigned Task
-          </p>
-          <h2
-            style={{
-              margin: '0',
-              fontSize: '20px',
-              color: theme.text,
-              fontWeight: '700',
-            }}
-          >
-            Deliver to: Arjun Mehta
-          </h2>
-          <p
-            style={{
-              margin: '12px 0 0 0',
-              fontSize: '15px',
-              color: '#424245',
-              lineHeight: '1.5',
-            }}
-          >
-            📍 42, Green Valley Apartments, Mumbai
-          </p>
-        </div>
+        {task ? (
+          <>
+            <div style={styles.taskCard}>
+              <span style={styles.label}>ACTIVE TASK</span>
+              <h3 style={{ margin: '5px 0' }}>{task.customers.full_name}</h3>
+              <p style={{ color: theme.gray, fontSize: '14px' }}>📍 {task.customers.delivery_address}</p>
+              
+              <div style={styles.statsRow}>
+                <div><small>Dist.</small><br/><b>{distance} km</b></div>
+                <div><small>ETD</small><br/><b>{task.traffic_api?.[0]?.etd_minutes || '--'} m</b></div>
+              </div>
 
-        {/* Action Button */}
-        <button
-          style={{
-            width: '100%',
-            backgroundColor: theme.orange,
-            color: theme.white,
-            padding: '18px',
-            borderRadius: '16px',
-            border: 'none',
-            fontSize: '17px',
-            fontWeight: '700',
-            cursor: 'pointer',
-            boxShadow: '0 10px 20px rgba(255, 107, 0, 0.25)',
-          }}
-          onClick={() => alert('Launching Google Maps...')}
-        >
-          Start Navigation
-        </button>
+              
+              <iframe width="100%" height="150" style={{ borderRadius: '12px', border: '1px solid #EEE', marginTop: '10px' }}
+                src={`https://www.openstreetmap.org/export/embed.html?bbox=${task.customers.lon-0.01},${task.customers.lat-0.01},${task.customers.lon+0.01},${task.customers.lat+0.01}&marker=${task.customers.lat},${task.customers.lon}`}></iframe>
 
-        <p style={{ marginTop: '24px', fontSize: '13px', color: '#86868B' }}>
-          Powered by mishTee Logistics
-        </p>
+              {!isNavigating ? (
+                <button onClick={startNavigation} style={{ ...styles.primaryBtn, backgroundColor: theme.orange }}>View Detailed Route</button>
+              ) : (
+                <button onClick={() => setShowPoD(true)} style={{ ...styles.primaryBtn, backgroundColor: theme.green }}>Mark as Delivered</button>
+              )}
+            </div>
+
+            {showPoD && (
+              <div style={styles.overlay}>
+                <div style={styles.modal}>
+                  <h3>Proof of Delivery</h3>
+                  <p style={{ fontSize: '12px', color: theme.gray }}>Recipient Signature / Initials:</p>
+                  <canvas ref={canvasRef} width="300" height="150" onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={() => setIsDrawing(false)} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={() => setIsDrawing(false)} style={styles.canvas} />
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
+                    <button onClick={() => setShowPoD(false)} style={styles.secondaryBtn}>Cancel</button>
+                    <button onClick={closeOrder} style={styles.primaryBtn}>Confirm Closure</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ padding: '40px 0', textAlign: 'center' }}>
+            <p style={{ color: theme.gray }}>No active tasks found.</p>
+            <button onClick={() => fetchLatestTask(agent)} style={styles.secondaryBtn}>Refresh Status</button>
+          </div>
+        )}
+        <button onClick={() => setIsLoggedIn(false)} style={styles.linkBtn}>Logout</button>
       </div>
     </div>
   );
 }
+
+const styles = {
+  shell: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#F2F2F7', padding: '15px' },
+  card: { width: '100%', maxWidth: '450px', backgroundColor: '#FFF', borderRadius: '25px', padding: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', boxSizing: 'border-box' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  logo: { width: '70px', marginBottom: '10px' },
+  input: { width: '100%', padding: '15px', borderRadius: '12px', border: '1px solid #DDD', marginBottom: '10px', boxSizing: 'border-box' },
+  primaryBtn: { width: '100%', color: '#FFF', padding: '15px', borderRadius: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', backgroundColor: '#FF6B00' },
+  secondaryBtn: { width: '100%', color: '#333', padding: '15px', borderRadius: '12px', border: '1px solid #DDD', fontWeight: 'bold', cursor: 'pointer', backgroundColor: '#FFF' },
+  taskCard: { padding: '20px', borderRadius: '15px', border: '1px solid #F0F0F0', textAlign: 'left' },
+  label: { fontSize: '10px', color: '#999', fontWeight: 'bold' },
+  statsRow: { display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderTop: '1px solid #F9F9F9' },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' },
+  modal: { backgroundColor: '#FFF', padding: '25px', borderRadius: '20px', width: '100%', maxWidth: '350px' },
+  canvas: { border: '2px dashed #DDD', borderRadius: '8px', width: '100%', cursor: 'crosshair', backgroundColor: '#FAFAFA' },
+  linkBtn: { width: '100%', background: 'none', border: 'none', color: '#999', marginTop: '20px', cursor: 'pointer', textDecoration: 'underline' }
+};
